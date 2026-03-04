@@ -15,10 +15,10 @@ const (
 )
 
 func init() {
-	cmdHandlerMap[uint16(pb.MsgCode_USER_LOGIN_CMD)] = UserLoginCmdHandler
+	cmdHandlerMap[uint16(pb.MsgCode_USER_LOGIN_CMD)] = userLoginCmdHandler
 }
 
-func UserLoginCmdHandler(conn *websocket.Conn, msg *dynamicpb.Message) {
+func userLoginCmdHandler(conn *websocket.Conn, msg *dynamicpb.Message) {
 	if conn == nil || msg == nil {
 		return
 	}

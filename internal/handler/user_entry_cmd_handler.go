@@ -9,10 +9,10 @@ import (
 )
 
 func init() {
-	cmdHandlerMap[uint16(pb.MsgCode_USER_ENTRY_CMD)] = EntryCmdHandler
+	cmdHandlerMap[uint16(pb.MsgCode_USER_ENTRY_CMD)] = entryCmdHandler
 }
 
-func EntryCmdHandler(conn *websocket.Conn, msg *dynamicpb.Message) {
+func entryCmdHandler(conn *websocket.Conn, msg *dynamicpb.Message) {
 	if conn == nil || msg == nil {
 		return
 	}

@@ -5,8 +5,8 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
-type CmdHandler func(conn *websocket.Conn, obj *dynamicpb.Message)
+type cmdHandlerFunc func(conn *websocket.Conn, obj *dynamicpb.Message)
 
-var cmdHandlerMap = make(map[uint16]CmdHandler)
+var cmdHandlerMap = make(map[uint16]cmdHandlerFunc)
 
-func CreateCmdHandler(code uint16) CmdHandler { return cmdHandlerMap[code] }
+func CreateCmdHandler(code uint16) cmdHandlerFunc { return cmdHandlerMap[code] }
