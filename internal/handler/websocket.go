@@ -54,7 +54,8 @@ func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		log.Info().Msgf("received client %v message => data: %v, code: %v, msg: %v",
+		log.Info().Msgf(
+			"received client %v message => data: %v, code: %v, msg: %v",
 			conn.RemoteAddr(),
 			data,
 			code,
