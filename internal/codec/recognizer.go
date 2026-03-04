@@ -1,6 +1,7 @@
-package pb
+package codec
 
 import (
+	"herostory-server/internal/pb"
 	"strings"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -25,21 +26,22 @@ func getMsgCodeByMsgName(name string) (int16, error) {
 	}
 
 	name = strings.ToLower(
-			strings.ReplaceAll(name, "_", ""),
+		strings.ReplaceAll(name, "_", ""),
 	)
 
 	return msgNameAndMsgCodeMap[name], nil
 }
 
+// InitMaps initializes message code and descriptor mappings.
 func InitMaps() {
-	for k, v := range MsgCode_value {
+	for k, v := range pb.MsgCode_value {
 		msgName := strings.ToLower(
 			strings.ReplaceAll(k, "_", ""),
 		)
 		msgNameAndMsgCodeMap[msgName] = int16(v)
 	}
-	
-	msgDescLst := File_api_proto_game_msg_proto.Messages()
+
+	msgDescLst := pb.File_api_proto_game_msg_proto.Messages()
 	for i := 0; i < msgDescLst.Len(); i++ {
 		msgDesc := msgDescLst.Get(i)
 		msgName := strings.ToLower(

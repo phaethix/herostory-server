@@ -1,4 +1,4 @@
-package pb
+package codec
 
 import (
 	"encoding/binary"
@@ -36,7 +36,7 @@ func EncodeMessage(obj protoreflect.ProtoMessage) ([]byte, error) {
 
 	// encode the length of the message
 	msgSizeByteArray := make([]byte, 2)
-	binary.BigEndian.PutUint16(msgSizeByteArray, 0) 
+	binary.BigEndian.PutUint16(msgSizeByteArray, 0)
 
 	// encode the code of the message
 	code, err := getMsgCodeByMsgName(string(obj.ProtoReflect().Descriptor().Name()))

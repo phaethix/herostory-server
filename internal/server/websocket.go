@@ -1,10 +1,11 @@
-package handler
+package server
 
 import (
 	"encoding/binary"
 	"errors"
+	"herostory-server/internal/codec"
+	"herostory-server/internal/handler"
 	"herostory-server/internal/main_thread"
-	"herostory-server/internal/pb"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -43,7 +44,7 @@ func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 		}
 
 		code := binary.BigEndian.Uint16(data[2:4])
-		msg, err := pb.DecodeMessage(data[4:], int16(code))
+		msg, err := codec.DecodeMessage(data[4:], int16(code))
 		if err != nil {
 			log.Error().Msgf(
 				"decode client %v message failed, code: %v, err: %v",
@@ -62,8 +63,8 @@ func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 			msg.Descriptor().Name(),
 		)
 
-		handler := CreateCmdHandler(code)
-		if handler == nil {
+		h := handler.CreateCmdHandler(code)
+		if h == nil {
 			log.Warn().Msgf(
 				"no handler found for client %v message, code: %v",
 				conn.RemoteAddr(),
@@ -72,6 +73,6 @@ func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		main_thread.Process(func() { handler(conn, msg) })
+		main_thread.Process(func() { h(conn, msg) })
 	}
 }
