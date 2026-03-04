@@ -5,7 +5,7 @@ import (
 	"errors"
 	"herostory-server/internal/codec"
 	"herostory-server/internal/handler"
-	"herostory-server/internal/main_thread"
+	"herostory-server/pkg/main_thread"
 	"net/http"
 
 	"github.com/gorilla/websocket"
