@@ -5,13 +5,18 @@ import (
 	"herostory-server/internal/codec"
 	"herostory-server/internal/handler"
 	"herostory-server/pkg/main_thread"
+	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-const MsgQueueSize = 1024
+const (
+	MsgQueueSize          = 1024
+	OneSecond             = 1000
+	ReadMsgCountPerSecond = 8
+)
 
 type CmdContext struct {
 	userId int64
@@ -88,6 +93,10 @@ func (w *CmdContext) LoopReceiveMessage() {
 		return
 	}
 
+	w.conn.SetReadLimit(64 * 1024)
+
+	t0, n := int64(0), 0
+
 	for {
 		_, data, err := w.conn.ReadMessage()
 		if err != nil {
@@ -96,6 +105,20 @@ func (w *CmdContext) LoopReceiveMessage() {
 				Msg("read message failed")
 			break
 		}
+
+		t1 := time.Now().UnixMilli()
+		if t1-t0 > OneSecond {
+			t0, n = t1, 0
+		}
+
+		if n > ReadMsgCountPerSecond {
+			log.Warn().
+				Str("client", w.conn.RemoteAddr().String()).
+				Int("message_count", n).
+				Msg("client is sending messages too fast")
+			continue
+		}
+		n++
 
 		code := binary.BigEndian.Uint16(data[2:4])
 		msg, err := codec.DecodeMessage(data[4:], int16(code))
