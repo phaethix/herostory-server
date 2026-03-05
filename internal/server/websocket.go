@@ -1,11 +1,7 @@
 package server
 
 import (
-	"encoding/binary"
-	"errors"
-	"herostory-server/internal/codec"
-	"herostory-server/internal/handler"
-	"herostory-server/pkg/main_thread"
+	websocket2 "herostory-server/internal/network/websocket"
 	"net/http"
 
 	"github.com/gorilla/websocket"
@@ -20,59 +16,23 @@ var upgrader = &websocket.Upgrader{
 	},
 }
 
-var (
-	ErrUpgradeWebSocket = errors.New("websocket upgrade failed")
-	ErrReadMessage      = errors.New("websocket read message failed")
-)
-
 func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
-
 	if err != nil {
-		log.Error().Msgf("%v: %v", ErrUpgradeWebSocket, err)
+		log.Error().
+			Err(err).
+			Msg("websocket upgrade failed")
 		return
 	}
 	defer conn.Close()
 
-	log.Info().Msgf("client %v connected to websocket", conn.RemoteAddr())
+	log.Info().
+		Str("remote", conn.RemoteAddr().String()).
+		Msg("client connected to websocket")
 
-	for {
-		_, data, err := conn.ReadMessage()
-		if err != nil {
-			log.Error().Msgf("%v: %v", ErrReadMessage, err)
-			break
-		}
+	ctx := websocket2.NewCmdContext(conn)
 
-		code := binary.BigEndian.Uint16(data[2:4])
-		msg, err := codec.DecodeMessage(data[4:], int16(code))
-		if err != nil {
-			log.Error().Msgf(
-				"decode client %v message failed, code: %v, err: %v",
-				conn.RemoteAddr(),
-				code,
-				err,
-			)
-			continue
-		}
+	go ctx.LoopSendMessage()
 
-		log.Info().Msgf(
-			"received client %v message => data: %v, code: %v, msg: %v",
-			conn.RemoteAddr(),
-			data,
-			code,
-			msg.Descriptor().Name(),
-		)
-
-		h := handler.CreateCmdHandler(code)
-		if h == nil {
-			log.Warn().Msgf(
-				"no handler found for client %v message, code: %v",
-				conn.RemoteAddr(),
-				code,
-			)
-			continue
-		}
-
-		main_thread.Process(func() { h(conn, msg) })
-	}
+	ctx.LoopReceiveMessage()
 }
