@@ -64,28 +64,30 @@ func (w *CmdContext) Disconnect() {
 func (w *CmdContext) LoopSendMessage() {
 	w.msgQ = make(chan protoreflect.ProtoMessage, MsgQueueSize)
 
-	for msg := range w.msgQ {
-		if msg == nil {
-			continue
-		}
+	go func() {
+		for msg := range w.msgQ {
+			if msg == nil {
+				continue
+			}
 
-		data, err := codec.EncodeMessage(msg)
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("client", w.conn.RemoteAddr().String()).
-				Msg("encode message failed")
-			continue
-		}
+			data, err := codec.EncodeMessage(msg)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Str("client", w.conn.RemoteAddr().String()).
+					Msg("encode message failed")
+				continue
+			}
 
-		err = w.conn.WriteMessage(websocket.BinaryMessage, data)
-		if err != nil {
-			log.Error().
-				Err(err).
-				Str("client", w.conn.RemoteAddr().String()).
-				Msg("write message failed")
+			err = w.conn.WriteMessage(websocket.BinaryMessage, data)
+			if err != nil {
+				log.Error().
+					Err(err).
+					Str("client", w.conn.RemoteAddr().String()).
+					Msg("write message failed")
+			}
 		}
-	}
+	}()
 }
 
 func (w *CmdContext) LoopReceiveMessage() {

@@ -32,7 +32,6 @@ func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 
 	ctx := websocket2.NewCmdContext(conn)
 
-	go ctx.LoopSendMessage()
-
+	ctx.LoopSendMessage()
 	ctx.LoopReceiveMessage()
 }
