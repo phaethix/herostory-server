@@ -1,14 +1,12 @@
 package handler
 
 import (
+	"herostory-server/internal/logic/login"
+	"herostory-server/internal/model"
 	"herostory-server/internal/pb"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
-)
-
-const (
-	HeroAvatarDefault = "Hero_Shaman"
 )
 
 func init() {
@@ -26,12 +24,25 @@ func userLoginCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 		return true
 	})
 
-	rest := &pb.UserLoginResult{
-		UserId:     1,
-		UserName:   cmd.UserName,
-		HeroAvatar: HeroAvatarDefault,
-	}
+	// login runs DB operations in a background goroutine and delivers
+	// the result back to the main thread via callback.
+	login.LoginByPasswordAsync(cmd.UserName, cmd.Password, func(user *model.User) {
+		if user == nil {
+			// login failed – userId 0 signals failure to the client
+			ctx.WriteMsg(&pb.UserLoginResult{
+				UserId:     0,
+				UserName:   cmd.UserName,
+				HeroAvatar: "",
+			})
+			return
+		}
 
-	ctx.BindUserId(1)
-	ctx.WriteMsg(rest)
+		// login successful – bind the user id to this connection
+		ctx.BindUserId(int64(user.ID))
+		ctx.WriteMsg(&pb.UserLoginResult{
+			UserId:     uint32(user.ID),
+			UserName:   user.UserName,
+			HeroAvatar: user.HeroAvatar,
+		})
+	})
 }
