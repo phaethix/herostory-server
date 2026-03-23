@@ -29,40 +29,10 @@ func LoginByPasswordAsync(username, password string, callback func(user *model.U
 
 // doLogin is the synchronous implementation that runs inside a goroutine.
 func doLogin(username, password string) *model.User {
-	// try to get the user by name
 	user, err := repository.GetUserByName(username)
 
 	if err == repository.ErrNotFound {
-		// user does not exist – auto-register with the supplied password
-		hashedPassword, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
-		if hashErr != nil {
-			log.Error().
-				Err(hashErr).
-				Str("username", username).
-				Msg("bcrypt hash failed during registration")
-			return nil
-		}
-
-		newUser := &model.User{
-			UserName:   username,
-			Password:   string(hashedPassword),
-			HeroAvatar: model.DefaultHeroAvatar,
-			CreateTime: time.Now().Unix(),
-		}
-
-		if err = repository.CreateUser(newUser); err != nil {
-			log.Error().
-				Err(err).
-				Str("username", username).
-				Msg("create user failed")
-			return nil
-		}
-
-		log.Info().
-			Str("username", username).
-			Int("userId", newUser.ID).
-			Msg("new user registered")
-		return newUser
+		return registerNewUser(username, password)
 	}
 
 	if err != nil {
@@ -73,23 +43,11 @@ func doLogin(username, password string) *model.User {
 		return nil
 	}
 
-	// user exists – verify password
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
-	if err != nil {
-		log.Warn().
-			Str("username", username).
-			Msg("login failed: wrong password")
+	if !verifyPassword(user, password) {
 		return nil
 	}
 
-	// update last login timestamp (non-critical, log but don't fail)
-	err = repository.UpdateLastLogin(user.ID)
-	if err != nil {
-		log.Warn().
-			Err(err).
-			Int("userId", user.ID).
-			Msg("update last login time failed")
-	}
+	updateLastLogin(user)
 
 	log.Info().
 		Str("username", username).
@@ -97,4 +55,59 @@ func doLogin(username, password string) *model.User {
 		Msg("user logged in")
 
 	return user
+}
+
+// registerNewUser creates a new user account with the supplied password.
+func registerNewUser(username, password string) *model.User {
+	hashedPassword, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if hashErr != nil {
+		log.Error().
+			Err(hashErr).
+			Str("username", username).
+			Msg("bcrypt hash failed during registration")
+		return nil
+	}
+
+	newUser := &model.User{
+		UserName:   username,
+		Password:   string(hashedPassword),
+		HeroAvatar: model.DefaultHeroAvatar,
+		CreateTime: time.Now().Unix(),
+	}
+
+	if err := repository.CreateUser(newUser); err != nil {
+		log.Error().
+			Err(err).
+			Str("username", username).
+			Msg("create user failed")
+		return nil
+	}
+
+	log.Info().
+		Str("username", username).
+		Int("userId", newUser.ID).
+		Msg("new user registered")
+	return newUser
+}
+
+// verifyPassword checks whether the supplied password matches the stored hash.
+func verifyPassword(user *model.User, password string) bool {
+	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+	if err != nil {
+		log.Warn().
+			Str("username", user.UserName).
+			Msg("login failed: wrong password")
+		return false
+	}
+	return true
+}
+
+// updateLastLogin updates the user's last login timestamp (non-critical).
+func updateLastLogin(user *model.User) {
+	if err := repository.UpdateLastLogin(user.ID); err != nil {
+		log.Warn().
+			Err(err).
+			Int("userId", user.ID).
+			Msg("update last login time failed")
+	}
 }
