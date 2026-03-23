@@ -63,6 +63,7 @@ func (r *AsyncBizResult[T]) doComplete() {
 		return
 	}
 
+	// use CAS to ensure completeFunc is dispatched exactly once.
 	if r.completeFuncCalled.CompareAndSwap(false, true) {
 		main_thread.Process(*fnPtr)
 	}
