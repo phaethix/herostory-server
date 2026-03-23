@@ -1,37 +1,46 @@
 package login
 
 import (
+	"errors"
 	"herostory-server/internal/model"
 	"herostory-server/internal/repository"
-	"herostory-server/pkg/main_thread"
+	asyncop "herostory-server/pkg/async_op"
 	"time"
 
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// LoginByPasswordAsync performs user authentication (or auto-registration) in a
-// background goroutine so that the game main thread is never blocked by database
-// I/O. when the operation completes, callback is invoked on the main thread with
-// the authenticated *model.User, or nil on failure.
-func LoginByPasswordAsync(username, password string, callback func(user *model.User)) {
+// LoginByPasswordAsync performs user authentication (or auto-registration)
+// asynchronously. It returns an *asyncop.AsyncBizResult[model.User] immediately
+// without blocking the main thread. The caller should register an OnComplete
+// callback on the returned result; once the database I/O finishes, the callback
+// will be dispatched to the main thread with the result available via GetReturnedObj.
+func LoginByPasswordAsync(username, password string) *asyncop.AsyncBizResult[model.User] {
 	if username == "" || password == "" {
-		main_thread.Process(func() { callback(nil) })
-		return
+		return nil
 	}
 
-	go func() {
-		user := doLogin(username, password)
-		// deliver result back to the main thread
-		main_thread.Process(func() { callback(user) })
-	}()
+	bizResult := &asyncop.AsyncBizResult[model.User]{}
+
+	asyncop.Process(
+		asyncop.StrToBindID(username),
+		func() {
+			// This closure runs on an async worker goroutine.
+			user := doLogin(username, password)
+			bizResult.SetReturnedObj(user)
+		},
+		nil,
+	)
+
+	return bizResult
 }
 
-// doLogin is the synchronous implementation that runs inside a goroutine.
+// doLogin is the synchronous implementation that runs inside an async worker.
 func doLogin(username, password string) *model.User {
 	user, err := repository.GetUserByName(username)
 
-	if err == repository.ErrNotFound {
+	if errors.Is(err, repository.ErrNotFound) {
 		return registerNewUser(username, password)
 	}
 

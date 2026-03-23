@@ -2,9 +2,9 @@ package handler
 
 import (
 	"herostory-server/internal/logic/login"
-	"herostory-server/internal/model"
 	"herostory-server/internal/pb"
 
+	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
@@ -24,9 +24,22 @@ func userLoginCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 		return true
 	})
 
-	// login runs DB operations in a background goroutine and delivers
-	// the result back to the main thread via callback.
-	login.LoginByPasswordAsync(cmd.UserName, cmd.Password, func(user *model.User) {
+	// LoginByPasswordAsync returns a typed AsyncBizResult[model.User] immediately.
+	// The actual DB I/O runs on an async worker goroutine.
+	bizResult := login.LoginByPasswordAsync(cmd.UserName, cmd.Password)
+
+	if bizResult == nil {
+		log.Error().
+			Str("username", cmd.UserName).
+			Msg("biz result is nil")
+		return
+	}
+
+	// OnComplete is dispatched to the main thread once the async operation
+	// finishes and sets the returned object.
+	bizResult.OnComplete(func() {
+		user := bizResult.GetReturnedObj()
+
 		if user == nil {
 			// login failed – userId 0 signals failure to the client
 			ctx.WriteMsg(&pb.UserLoginResult{
@@ -37,7 +50,8 @@ func userLoginCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 			return
 		}
 
-		// login successful – bind the user id to this connection
+		// login successful – bind the user id to this connection.
+		// No type assertion needed thanks to generics.
 		ctx.BindUserId(int64(user.ID))
 		ctx.WriteMsg(&pb.UserLoginResult{
 			UserId:     uint32(user.ID),
