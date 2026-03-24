@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"herostory-server/internal/game"
 	"herostory-server/internal/logic/login"
 	"herostory-server/internal/pb"
 
@@ -50,9 +51,16 @@ func userLoginCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 			return
 		}
 
-		// login successful – bind the user id to this connection.
-		// No type assertion needed thanks to generics.
+		// login successful – bind the user id to this connection
 		ctx.BindUserId(int64(user.ID))
+
+		// register user in the online user group (pure data, no connection)
+		game.AddOnlineUser(&game.OnlineUser{
+			UserID:     user.ID,
+			UserName:   user.UserName,
+			HeroAvatar: user.HeroAvatar,
+		})
+
 		ctx.WriteMsg(&pb.UserLoginResult{
 			UserId:     uint32(user.ID),
 			UserName:   user.UserName,
