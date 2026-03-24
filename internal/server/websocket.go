@@ -1,8 +1,10 @@
 package server
 
 import (
+	"herostory-server/internal/network/broadcaster"
 	websocket2 "herostory-server/internal/network/websocket"
 	"net/http"
+	"sync/atomic"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
@@ -15,6 +17,9 @@ var upgrader = &websocket.Upgrader{
 		return true
 	},
 }
+
+// sessionIDCounter is an atomic counter for assigning unique session IDs.
+var sessionIDCounter int32
 
 func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -30,7 +35,11 @@ func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 		Str("remote", conn.RemoteAddr().String()).
 		Msg("client connected to websocket")
 
-	ctx := websocket2.NewCmdContext(conn)
+	sid := atomic.AddInt32(&sessionIDCounter, 1)
+	ctx := websocket2.NewCmdContext(conn, sid)
+
+	broadcaster.AddCmdCtx(sid, ctx)
+	defer broadcaster.RemoveCmdCtx(sid)
 
 	ctx.LoopSendMessage()
 	ctx.LoopReceiveMessage()

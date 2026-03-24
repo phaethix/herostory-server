@@ -3,7 +3,10 @@ package websocket
 import (
 	"encoding/binary"
 	"herostory-server/internal/codec"
+	"herostory-server/internal/game"
 	"herostory-server/internal/handler"
+	"herostory-server/internal/network/broadcaster"
+	"herostory-server/internal/pb"
 	"herostory-server/pkg/main_thread"
 	"time"
 
@@ -19,15 +22,17 @@ const (
 )
 
 type CmdContext struct {
-	userId int64
-	addr   string
-	conn   *websocket.Conn
-	msgQ   chan protoreflect.ProtoMessage
+	userId    int64
+	SessionID int32
+	addr      string
+	conn      *websocket.Conn
+	msgQ      chan protoreflect.ProtoMessage
 }
 
-func NewCmdContext(conn *websocket.Conn) *CmdContext {
+func NewCmdContext(conn *websocket.Conn, sessionID int32) *CmdContext {
 	return &CmdContext{
-		conn: conn,
+		conn:      conn,
+		SessionID: sessionID,
 	}
 }
 
@@ -95,6 +100,8 @@ func (w *CmdContext) LoopReceiveMessage() {
 		return
 	}
 
+	defer w.cleanupOnDisconnect()
+
 	w.conn.SetReadLimit(64 * 1024)
 
 	t0, n := int64(0), 0
@@ -147,4 +154,18 @@ func (w *CmdContext) LoopReceiveMessage() {
 
 		main_thread.Process(func() { h(w, msg) })
 	}
+}
+
+// cleanupOnDisconnect removes the user from the online list
+// and broadcasts UserQuitResult to notify other players.
+func (w *CmdContext) cleanupOnDisconnect() {
+	if w.userId <= 0 {
+		return
+	}
+
+	game.RemoveOnlineUser(int(w.userId))
+	
+	broadcaster.Broadcast(&pb.UserQuitResult{
+		QuitUserId: uint32(w.userId),
+	})
 }
