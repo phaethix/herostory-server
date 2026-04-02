@@ -6,6 +6,7 @@ type OnlineUser struct {
 	UserID     int
 	UserName   string
 	HeroAvatar string
+	MoveState  *MoveState
 }
 
 var onlineUsers = make(map[int]*OnlineUser)
