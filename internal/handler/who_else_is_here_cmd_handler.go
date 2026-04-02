@@ -19,11 +19,15 @@ func whoElseIsHereCmdHandler(ctx CmdContext, _ *dynamicpb.Message) {
 	result := &pb.WhoElseIsHereResult{}
 
 	game.ForEachOnlineUser(func(u *game.OnlineUser) {
-		result.UserInfo = append(result.UserInfo, &pb.WhoElseIsHereResult_UserInfo{
+		info := &pb.WhoElseIsHereResult_UserInfo{
 			UserId:     uint32(u.UserID),
 			UserName:   u.UserName,
 			HeroAvatar: u.HeroAvatar,
-		})
+		}
+		if u.MoveState != nil {
+			info.MoveState = u.MoveState.ToPB()
+		}
+		result.UserInfo = append(result.UserInfo, info)
 	})
 
 	ctx.WriteMsg(result)
