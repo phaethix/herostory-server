@@ -23,3 +23,7 @@ Dockerfile.cross
 *.swp
 *.swo
 *~
+*.cache
+*.log
+*.tmp
+*.bak
