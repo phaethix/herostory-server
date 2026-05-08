@@ -7,6 +7,7 @@ import (
 	"herostory-server/internal/handler"
 	"herostory-server/internal/network/broadcaster"
 	"herostory-server/internal/pb"
+	"herostory-server/internal/userpersist"
 	"herostory-server/pkg/main_thread"
 	"time"
 
@@ -156,16 +157,33 @@ func (w *CmdContext) LoopReceiveMessage() {
 	}
 }
 
-// cleanupOnDisconnect removes the user from the online list
-// and broadcasts UserQuitResult to notify other players.
+// cleanupOnDisconnect removes the user from the online list, force-flushes
+// any pending mutable state (e.g. HP) to the DB, and broadcasts
+// UserQuitResult to notify other players.
+//
+// This method is invoked from the connection's reader goroutine. All
+// mutations to game-wide state are routed through main_thread.Process so
+// they execute on the same goroutine as command handlers, preserving the
+// "single-threaded game loop" invariant.
 func (w *CmdContext) cleanupOnDisconnect() {
-	if w.userId <= 0 {
+	uid := w.userId
+	if uid <= 0 {
 		return
 	}
 
-	game.RemoveOnlineUser(int(w.userId))
-	
-	broadcaster.Broadcast(&pb.UserQuitResult{
-		QuitUserId: uint32(w.userId),
+	main_thread.Process(func() {
+		if u := game.GetOnlineUser(int(uid)); u != nil {
+			// Persist the latest HP before forgetting the user. Using
+			// PersistNow bypasses the lazy-save quiet period so a quick
+			// log-in/log-out followed by a process restart does not
+			// rewind the user's HP.
+			userpersist.PersistNow(u)
+		}
+
+		game.RemoveOnlineUser(int(uid))
+
+		broadcaster.Broadcast(&pb.UserQuitResult{
+			QuitUserId: uint32(uid),
+		})
 	})
 }

@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"cmp"
 	"herostory-server/internal/game"
 	"herostory-server/internal/logic/login"
+	"herostory-server/internal/model"
 	"herostory-server/internal/pb"
 
 	"github.com/rs/zerolog/log"
@@ -54,11 +56,18 @@ func userLoginCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 		// login successful – bind the user id to this connection
 		ctx.BindUserId(int64(user.ID))
 
-		// register user in the online user group (pure data, no connection)
+		// HP is persisted across sessions. A user that logs back in dead
+		// (curr_hp == 0, the column default) respawns at full HP;
+		// otherwise the previously persisted HP is restored. cmp.Or
+		// returns its first non-zero argument, which matches the
+		// "treat 0 as 'unset, use default'" intent. Negative HP is not
+		// possible by design (attack only reduces HP toward 0 and the
+		// column is NOT NULL DEFAULT 0).
 		game.AddOnlineUser(&game.OnlineUser{
 			UserID:     user.ID,
 			UserName:   user.UserName,
 			HeroAvatar: user.HeroAvatar,
+			CurrHp:     cmp.Or(user.CurrHp, model.DefaultMaxHp),
 		})
 
 		ctx.WriteMsg(&pb.UserLoginResult{
