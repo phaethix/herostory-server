@@ -56,13 +56,18 @@ func userLoginCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 		// login successful – bind the user id to this connection
 		ctx.BindUserId(int64(user.ID))
 
-		// HP is persisted across sessions. A user that logs back in dead
-		// (curr_hp == 0, the column default) respawns at full HP;
-		// otherwise the previously persisted HP is restored. cmp.Or
-		// returns its first non-zero argument, which matches the
-		// "treat 0 as 'unset, use default'" intent. Negative HP is not
-		// possible by design (attack only reduces HP toward 0 and the
-		// column is NOT NULL DEFAULT 0).
+		// HP is the DB's source of truth: registration writes
+		// DefaultMaxHp, attacks decrement it, and disconnect flushes
+		// the latest value back. The cmp.Or fallback below covers two
+		// edge cases:
+		//   - legacy rows that pre-date the curr_hp column (or its
+		//     default:100 change) and still hold 0;
+		//   - any future case where a process crash skipped the final
+		//     PersistNow on death (target.CurrHp == 0 in DB).
+		// In both, treating 0 as "respawn at full HP" is the desired
+		// gameplay behaviour. cmp.Or returns its first non-zero
+		// argument; negative HP is not possible by design (attacks
+		// only drive HP toward 0 and the column is NOT NULL).
 		game.AddOnlineUser(&game.OnlineUser{
 			UserID:     user.ID,
 			UserName:   user.UserName,
