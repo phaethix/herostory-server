@@ -18,8 +18,9 @@ var upgrader = &websocket.Upgrader{
 	},
 }
 
-// sessionIDCounter is an atomic counter for assigning unique session IDs.
-var sessionIDCounter int32
+// sessionIDCounter assigns a unique, monotonically increasing session
+// ID to every accepted WebSocket connection.
+var sessionIDCounter atomic.Int32
 
 func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
@@ -35,7 +36,7 @@ func WebSocketHandshake(w http.ResponseWriter, r *http.Request) {
 		Str("remote", conn.RemoteAddr().String()).
 		Msg("client connected to websocket")
 
-	sid := atomic.AddInt32(&sessionIDCounter, 1)
+	sid := sessionIDCounter.Add(1)
 	ctx := websocket2.NewCmdContext(conn, sid)
 
 	broadcaster.AddCmdCtx(sid, ctx)
