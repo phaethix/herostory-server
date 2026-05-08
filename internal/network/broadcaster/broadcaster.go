@@ -28,14 +28,14 @@ func RemoveCmdCtx(sessionID int32) {
 	delete(innerMap, sessionID)
 }
 
-// Broadcast sends a message to every connected client.
+// Broadcast sends a message to every connected client. AddCmdCtx
+// already filters out nil writers, so the loop body can call WriteMsg
+// unconditionally.
 func Broadcast(msg protoreflect.ProtoMessage) {
 	if msg == nil {
 		return
 	}
 	for _, ctx := range innerMap {
-		if ctx != nil {
-			ctx.WriteMsg(msg)
-		}
+		ctx.WriteMsg(msg)
 	}
 }

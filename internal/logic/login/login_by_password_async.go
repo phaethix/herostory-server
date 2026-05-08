@@ -81,6 +81,7 @@ func registerNewUser(username, password string) *model.User {
 		UserName:   username,
 		Password:   string(hashedPassword),
 		HeroAvatar: model.DefaultHeroAvatar,
+		CurrHp:     model.DefaultMaxHp,
 		CreateTime: time.Now().Unix(),
 	}
 

@@ -1,11 +1,17 @@
 package game
 
+import (
+	"iter"
+	"maps"
+)
+
 // OnlineUser holds the runtime data of a logged-in user.
 // All functions operating on onlineUsers are called from the main thread, no lock needed.
 type OnlineUser struct {
 	UserID     int
 	UserName   string
 	HeroAvatar string
+	CurrHp     int32
 	MoveState  *MoveState
 }
 
@@ -29,9 +35,13 @@ func GetOnlineUser(userID int) *OnlineUser {
 	return onlineUsers[userID]
 }
 
-// ForEachOnlineUser iterates over all online users and calls fn for each.
-func ForEachOnlineUser(fn func(u *OnlineUser)) {
-	for _, u := range onlineUsers {
-		fn(u)
-	}
+// OnlineUsers returns an iterator over every online user. Callers can
+// either drive it with `for u := range game.OnlineUsers()` or collect
+// into a slice via slices.Collect.
+//
+// The iteration order is undefined (Go map order). All consumers must
+// run on the main goroutine because the underlying map is not
+// synchronised.
+func OnlineUsers() iter.Seq[*OnlineUser] {
+	return maps.Values(onlineUsers)
 }

@@ -59,3 +59,16 @@ func UpdateLastLogin(userID int) error {
 		Update("last_login_time", now).
 		Error
 }
+
+// UpdateCurrHp persists the latest curr_hp value for the given user id.
+func UpdateCurrHp(userID int, currHp int32) error {
+	db := database.GetDB()
+	if db == nil {
+		return ErrDatabaseNotInitialized
+	}
+
+	return db.Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("curr_hp", currHp).
+		Error
+}

@@ -27,3 +27,4 @@ Dockerfile.cross
 *.log
 *.tmp
 *.bak
+*.codebuddy
