@@ -60,13 +60,28 @@ func SaveOrUpdate(u *game.OnlineUser) {
 	lazysave.SaveOrUpdate(lsoID(u.UserID), persistHP(u.UserID, u.CurrHp))
 }
 
-// PersistNow bypasses the lazy-save quiet period and persists u
-// immediately (still asynchronously, on the worker pool). Call this on
-// user disconnect so HP is not lost if the process exits before the
-// next flusher tick.
+// PersistNow synchronously writes u's mutable fields to the database on
+// the calling goroutine. Unlike SaveOrUpdate it bypasses both the
+// lazy-save quiet period and the asyncop worker pool, so by the time
+// PersistNow returns the UPDATE has either succeeded or failed (and
+// been logged).
+//
+// This is intentionally synchronous: the disconnect path calls it right
+// before forgetting the user, and a fire-and-forget dispatch there
+// could lose the write if the process is restarted, the worker pool's
+// task is preempted, or the DB connection is closed before the queued
+// task drains. Disconnect is not a hot path, so a single blocking
+// UPDATE is acceptable; in exchange we get the "Now" semantics the
+// name promises.
 func PersistNow(u *game.OnlineUser) {
 	if u == nil || u.UserID <= 0 {
 		return
 	}
-	persistHP(u.UserID, u.CurrHp)()
+	if err := repository.UpdateCurrHp(u.UserID, u.CurrHp); err != nil {
+		log.Error().
+			Err(err).
+			Int("userId", u.UserID).
+			Int32("currHp", u.CurrHp).
+			Msg("PersistNow: persist curr_hp failed")
+	}
 }
