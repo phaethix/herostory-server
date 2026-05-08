@@ -89,6 +89,24 @@ func (s *store) saveOrUpdate(id string, persist func()) {
 	s.records[id] = &record{persist: persist, lastUpdate: time.Now()}
 }
 
+// cancel drops a pending record without invoking its persist func.
+// Returns true when a record was actually removed. Use this when the
+// caller has just persisted the entity through a different code path
+// (e.g. a synchronous PersistNow on disconnect) and wants to prevent
+// the flusher from later replaying a now-stale snapshot on top of it.
+func (s *store) cancel(id string) bool {
+	if id == "" {
+		return false
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.records[id]; !ok {
+		return false
+	}
+	delete(s.records, id)
+	return true
+}
+
 // flushAll synchronously runs every pending persist func and empties
 // the store. It does NOT stop the background flusher: the caller is
 // expected to be terminating the process.
@@ -164,4 +182,12 @@ func SaveOrUpdate(id string, persist func()) {
 // default store. Intended for graceful shutdown.
 func FlushAll() {
 	defaultStore.flushAll()
+}
+
+// Cancel drops the pending record registered under id, if any. It is a
+// no-op when no such record exists. Callers use this after persisting
+// the entity through a faster path (e.g. a synchronous shutdown write)
+// to make sure the flusher does not later replay a stale snapshot.
+func Cancel(id string) bool {
+	return defaultStore.cancel(id)
 }

@@ -1,11 +1,11 @@
 package handler
 
 import (
-	"cmp"
 	"herostory-server/internal/game"
 	"herostory-server/internal/logic/login"
 	"herostory-server/internal/model"
 	"herostory-server/internal/pb"
+	"herostory-server/internal/repository"
 
 	"github.com/rs/zerolog/log"
 	"google.golang.org/protobuf/reflect/protoreflect"
@@ -56,23 +56,38 @@ func userLoginCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 		// login successful – bind the user id to this connection
 		ctx.BindUserId(int64(user.ID))
 
-		// HP is the DB's source of truth: registration writes
-		// DefaultMaxHp, attacks decrement it, and disconnect flushes
-		// the latest value back. The cmp.Or fallback below covers two
-		// edge cases:
-		//   - legacy rows that pre-date the curr_hp column (or its
-		//     default:100 change) and still hold 0;
-		//   - any future case where a process crash skipped the final
-		//     PersistNow on death (target.CurrHp == 0 in DB).
-		// In both, treating 0 as "respawn at full HP" is the desired
-		// gameplay behaviour. cmp.Or returns its first non-zero
-		// argument; negative HP is not possible by design (attacks
-		// only drive HP toward 0 and the column is NOT NULL).
+		// Login starts a fresh session at full HP, unconditionally.
+		//
+		// Rationale: the wire protocol (UserLoginResult /
+		// UserEntryResult / WhoElseIsHereResult) carries no HP field,
+		// so the client always renders a freshly-logged-in avatar at
+		// full HP regardless of what the server thinks. If we kept the
+		// DB's HP across sessions, a user who disconnected at e.g.
+		// HP=10 would re-enter looking healthy on screen but die from
+		// a single hit on the server — exactly the bug we hit in
+		// practice. Until the protocol grows an HP field, the only
+		// consistent contract is "login == respawn".
+		//
+		// curr_hp is therefore a session-scoped value: lazy-save still
+		// protects against in-session crashes (so a hit landed seconds
+		// before a server restart isn't lost mid-fight), but it does
+		// not survive a clean logout/login cycle.
+		hp := model.DefaultMaxHp
+		if hp != user.CurrHp {
+			if err := repository.UpdateCurrHp(user.ID, hp); err != nil {
+				log.Error().
+					Err(err).
+					Int("userId", user.ID).
+					Int32("currHp", hp).
+					Msg("login: respawn HP repair failed")
+			}
+		}
+
 		game.AddOnlineUser(&game.OnlineUser{
 			UserID:     user.ID,
 			UserName:   user.UserName,
 			HeroAvatar: user.HeroAvatar,
-			CurrHp:     cmp.Or(user.CurrHp, model.DefaultMaxHp),
+			CurrHp:     hp,
 		})
 
 		ctx.WriteMsg(&pb.UserLoginResult{

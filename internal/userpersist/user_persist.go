@@ -73,6 +73,12 @@ func SaveOrUpdate(u *game.OnlineUser) {
 // task drains. Disconnect is not a hot path, so a single blocking
 // UPDATE is acceptable; in exchange we get the "Now" semantics the
 // name promises.
+//
+// After the synchronous write we drop any lazy-save record still
+// registered for this user. Otherwise the flusher could later replay
+// a stale snapshot (e.g. an HP=90 captured just before disconnect)
+// on top of a newer authoritative value (e.g. HP=100 written by the
+// next login's respawn repair), silently rewinding the user's HP.
 func PersistNow(u *game.OnlineUser) {
 	if u == nil || u.UserID <= 0 {
 		return
@@ -84,4 +90,5 @@ func PersistNow(u *game.OnlineUser) {
 			Int32("currHp", u.CurrHp).
 			Msg("PersistNow: persist curr_hp failed")
 	}
+	lazysave.Cancel(lsoID(u.UserID))
 }
