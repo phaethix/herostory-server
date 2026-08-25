@@ -21,6 +21,21 @@ func Process(task func()) {
 	queue <- task
 }
 
+// ProcessWait runs task on the main thread and blocks until it finishes.
+// Must not be called from the main thread itself or it will deadlock.
+func ProcessWait(task func()) {
+	if task == nil {
+		return
+	}
+
+	done := make(chan struct{})
+	Process(func() {
+		task()
+		close(done)
+	})
+	<-done
+}
+
 func execute() {
 	for task := range queue {
 		if task != nil {

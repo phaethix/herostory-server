@@ -34,6 +34,7 @@ func NewCmdContext(conn *websocket.Conn, sessionID int32) *CmdContext {
 	return &CmdContext{
 		conn:      conn,
 		SessionID: sessionID,
+		msgQ:      make(chan protoreflect.ProtoMessage, MsgQueueSize),
 	}
 }
 
@@ -50,7 +51,7 @@ func (w *CmdContext) GetClientAddr() string {
 }
 
 func (w *CmdContext) WriteMsg(msg protoreflect.ProtoMessage) {
-	if msg == nil || w.conn == nil || w.msgQ == nil {
+	if msg == nil || w.msgQ == nil {
 		return
 	}
 
@@ -68,7 +69,9 @@ func (w *CmdContext) Disconnect() {
 }
 
 func (w *CmdContext) LoopSendMessage() {
-	w.msgQ = make(chan protoreflect.ProtoMessage, MsgQueueSize)
+	if w.msgQ == nil {
+		w.msgQ = make(chan protoreflect.ProtoMessage, MsgQueueSize)
+	}
 
 	go func() {
 		for msg := range w.msgQ {
