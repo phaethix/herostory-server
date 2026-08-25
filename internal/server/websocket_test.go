@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -28,18 +27,18 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
-func startWS(t *testing.T) string {
-	t.Helper()
-	srv := httptest.NewTestServer(t, http.HandlerFunc(WebSocketHandshake))
-	srv.Start()
-	return "ws" + strings.TrimPrefix(srv.URL, "http")
-}
-
 func dial(t *testing.T) *websocket.Conn {
 	t.Helper()
+	srv := httptest.NewTestServer(t, http.HandlerFunc(WebSocketHandshake))
+	tr, ok := srv.Client().Transport.(*http.Transport)
+	require.True(t, ok)
+
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	conn, resp, err := (&websocket.Dialer{}).DialContext(ctx, startWS(t), nil)
+	// Default net.Dial cannot see NewTestServer's in-memory network.
+	conn, resp, err := (&websocket.Dialer{
+		NetDialContext: tr.DialContext,
+	}).DialContext(ctx, "ws://example.com/", nil)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
 	t.Cleanup(func() { _ = conn.Close() })
