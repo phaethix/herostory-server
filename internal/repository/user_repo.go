@@ -72,3 +72,16 @@ func UpdateCurrHp(userID int, currHp int32) error {
 		Update("curr_hp", currHp).
 		Error
 }
+
+// UpdateHeroAvatar persists the selected hero_avatar for the given user id.
+func UpdateHeroAvatar(userID int, heroAvatar string) error {
+	db := database.GetDB()
+	if db == nil {
+		return ErrDatabaseNotInitialized
+	}
+
+	return db.Model(&model.User{}).
+		Where("id = ?", userID).
+		Update("hero_avatar", heroAvatar).
+		Error
+}
