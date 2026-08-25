@@ -5,7 +5,6 @@ import (
 	"herostory-server/internal/network/broadcaster"
 	"herostory-server/internal/pb"
 
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
@@ -18,11 +17,7 @@ func userAttkCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 		return
 	}
 
-	cmd := &pb.UserAttkCmd{}
-	msg.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
-		cmd.ProtoReflect().Set(fd, v)
-		return true
-	})
+	cmd := unmarshalCmd[pb.UserAttkCmd](msg)
 
 	result := attack.Apply(int(ctx.GetUserId()), cmd)
 	if result == nil {

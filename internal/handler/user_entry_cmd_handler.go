@@ -27,7 +27,6 @@ func userEntryCmdHandler(ctx CmdContext, _ *dynamicpb.Message) {
 		return
 	}
 
-	// broadcast user entry to all connected clients
 	broadcaster.Broadcast(&pb.UserEntryResult{
 		UserId:     uint32(userId),
 		UserName:   user.UserName,

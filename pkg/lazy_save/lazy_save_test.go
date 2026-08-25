@@ -22,7 +22,7 @@ func TestSaveOrUpdate_CoalescesById(t *testing.T) {
 	s := newStore(time.Hour, time.Hour) // disable auto-flush
 
 	persist, _ := counter()
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		s.saveOrUpdate("user:1", persist)
 	}
 
@@ -89,7 +89,7 @@ func TestFlushAll_PersistsAndClears(t *testing.T) {
 
 	const n = 16
 	counts := make([]*atomic.Int32, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		persist, c := counter()
 		counts[i] = c
 		s.saveOrUpdate("u"+strconv.Itoa(i), persist)
@@ -117,14 +117,12 @@ func TestSaveOrUpdate_Concurrent(t *testing.T) {
 	const perG = 1000
 
 	var wg sync.WaitGroup
-	wg.Add(goroutines)
-	for i := 0; i < goroutines; i++ {
-		go func() {
-			defer wg.Done()
-			for j := 0; j < perG; j++ {
+	for range goroutines {
+		wg.Go(func() {
+			for range perG {
 				s.saveOrUpdate("user:hot", persist)
 			}
-		}()
+		})
 	}
 
 	stop := make(chan struct{})

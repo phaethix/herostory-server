@@ -2,48 +2,38 @@ package login
 
 import (
 	"errors"
+	"time"
+
 	"herostory-server/internal/model"
 	"herostory-server/internal/repository"
 	asyncop "herostory-server/pkg/async_op"
-	"time"
 
 	"github.com/rs/zerolog/log"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// LoginByPasswordAsync performs user authentication (or auto-registration)
-// asynchronously. It returns an *asyncop.AsyncBizResult[model.User] immediately
-// without blocking the main thread. The caller should register an OnComplete
-// callback on the returned result; once the database I/O finishes, the callback
-// will be dispatched to the main thread with the result available via GetReturnedObj.
+// LoginByPasswordAsync authenticates, or auto-registers if the name is new.
+// It returns immediately so bcrypt/DB cannot stall the game loop.
+// Empty credentials yield nil.
 func LoginByPasswordAsync(username, password string) *asyncop.AsyncBizResult[model.User] {
 	if username == "" || password == "" {
 		return nil
 	}
 
 	bizResult := &asyncop.AsyncBizResult[model.User]{}
-
 	asyncop.Process(
 		asyncop.StrToBindID(username),
-		func() {
-			// This closure runs on an async worker goroutine.
-			user := doLogin(username, password)
-			bizResult.SetReturnedObj(user)
-		},
+		func() { bizResult.SetReturnedObj(doLogin(username, password)) },
 		nil,
 	)
-
 	return bizResult
 }
 
-// doLogin is the synchronous implementation that runs inside an async worker.
 func doLogin(username, password string) *model.User {
 	user, err := repository.GetUserByName(username)
-
 	if errors.Is(err, repository.ErrNotFound) {
 		return registerNewUser(username, password)
 	}
-
 	if err != nil {
 		log.Error().
 			Err(err).
@@ -51,22 +41,18 @@ func doLogin(username, password string) *model.User {
 			Msg("query user failed")
 		return nil
 	}
-
 	if !verifyPassword(user, password) {
 		return nil
 	}
 
 	updateLastLogin(user)
-
 	log.Info().
 		Str("username", username).
 		Int("userId", user.ID).
 		Msg("user logged in")
-
 	return user
 }
 
-// registerNewUser creates a new user account with the supplied password.
 func registerNewUser(username, password string) *model.User {
 	hashedPassword, hashErr := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if hashErr != nil {
@@ -84,7 +70,6 @@ func registerNewUser(username, password string) *model.User {
 		CurrHp:     model.DefaultMaxHp,
 		CreateTime: time.Now().Unix(),
 	}
-
 	if err := repository.CreateUser(newUser); err != nil {
 		log.Error().
 			Err(err).
@@ -100,10 +85,8 @@ func registerNewUser(username, password string) *model.User {
 	return newUser
 }
 
-// verifyPassword checks whether the supplied password matches the stored hash.
 func verifyPassword(user *model.User, password string) bool {
-	err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
-	if err != nil {
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
 		log.Warn().
 			Str("username", user.UserName).
 			Msg("login failed: wrong password")
@@ -112,7 +95,6 @@ func verifyPassword(user *model.User, password string) bool {
 	return true
 }
 
-// updateLastLogin updates the user's last login timestamp (non-critical).
 func updateLastLogin(user *model.User) {
 	if err := repository.UpdateLastLogin(user.ID); err != nil {
 		log.Warn().
@@ -120,4 +102,22 @@ func updateLastLogin(user *model.User) {
 			Int("userId", user.ID).
 			Msg("update last login time failed")
 	}
+}
+
+// SessionHP is always full HP. The login/entry/who-else protos carry no
+// HP field, so the client always draws a full bar; keeping a wounded
+// DB value would look healthy on screen and then die in one hit.
+func SessionHP(user *model.User) int32 {
+	hp := model.DefaultMaxHp
+	if user == nil || user.CurrHp == hp {
+		return hp
+	}
+	if err := repository.UpdateCurrHp(user.ID, hp); err != nil {
+		log.Error().
+			Err(err).
+			Int("userId", user.ID).
+			Int32("currHp", hp).
+			Msg("login: respawn HP repair failed")
+	}
+	return hp
 }

@@ -5,8 +5,8 @@ import (
 	"maps"
 )
 
-// OnlineUser holds the runtime data of a logged-in user.
-// All functions operating on onlineUsers are called from the main thread, no lock needed.
+// OnlineUser is session state. The map is unsynchronised: every
+// function in this package must run on the main goroutine.
 type OnlineUser struct {
 	UserID     int
 	UserName   string
@@ -17,7 +17,6 @@ type OnlineUser struct {
 
 var onlineUsers = make(map[int]*OnlineUser)
 
-// AddOnlineUser registers a user as online.
 func AddOnlineUser(u *OnlineUser) {
 	if u == nil || u.UserID <= 0 {
 		return
@@ -25,23 +24,16 @@ func AddOnlineUser(u *OnlineUser) {
 	onlineUsers[u.UserID] = u
 }
 
-// RemoveOnlineUser removes a user from the online set.
 func RemoveOnlineUser(userID int) {
 	delete(onlineUsers, userID)
 }
 
-// GetOnlineUser returns the OnlineUser for the given id, or nil.
+// GetOnlineUser returns nil when the user is not in the session map.
 func GetOnlineUser(userID int) *OnlineUser {
 	return onlineUsers[userID]
 }
 
-// OnlineUsers returns an iterator over every online user. Callers can
-// either drive it with `for u := range game.OnlineUsers()` or collect
-// into a slice via slices.Collect.
-//
-// The iteration order is undefined (Go map order). All consumers must
-// run on the main goroutine because the underlying map is not
-// synchronised.
+// OnlineUsers yields map order. Callers must already be on the main goroutine.
 func OnlineUsers() iter.Seq[*OnlineUser] {
 	return maps.Values(onlineUsers)
 }

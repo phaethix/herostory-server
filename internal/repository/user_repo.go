@@ -15,72 +15,69 @@ var (
 	ErrDatabaseNotInitialized = errors.New("database not initialized")
 )
 
-// GetUserByName retrieves a user by username.
-// returns ErrNotFound if the user does not exist.
-func GetUserByName(username string) (*model.User, error) {
-	db := database.GetDB()
-	if db == nil {
+func db() (*gorm.DB, error) {
+	d := database.GetDB()
+	if d == nil {
 		return nil, ErrDatabaseNotInitialized
+	}
+	return d, nil
+}
+
+// GetUserByName returns ErrNotFound when the username does not exist.
+func GetUserByName(username string) (*model.User, error) {
+	d, err := db()
+	if err != nil {
+		return nil, err
 	}
 
 	var user model.User
-	res := db.Where("user_name = ?", username).First(&user)
+	res := d.Where("user_name = ?", username).First(&user)
 	if res.Error != nil {
 		if errors.Is(res.Error, gorm.ErrRecordNotFound) {
 			return nil, ErrNotFound
 		}
 		return nil, res.Error
 	}
-
 	return &user, nil
 }
 
-// CreateUser inserts a new user record.
-// the caller should ensure the password field is already hashed and that UserName is unique.
+// CreateUser expects Password to already be a bcrypt hash.
 func CreateUser(u *model.User) error {
-	db := database.GetDB()
-	if db == nil {
-		return ErrDatabaseNotInitialized
+	d, err := db()
+	if err != nil {
+		return err
 	}
-
-	return db.Create(u).Error
+	return d.Create(u).Error
 }
 
-// UpdateLastLogin updates the last_login_time for the given user id.
 func UpdateLastLogin(userID int) error {
-	db := database.GetDB()
-	if db == nil {
-		return ErrDatabaseNotInitialized
+	d, err := db()
+	if err != nil {
+		return err
 	}
-
-	now := time.Now().Unix()
-	return db.Model(&model.User{}).
+	return d.Model(&model.User{}).
 		Where("id = ?", userID).
-		Update("last_login_time", now).
+		Update("last_login_time", time.Now().Unix()).
 		Error
 }
 
-// UpdateCurrHp persists the latest curr_hp value for the given user id.
 func UpdateCurrHp(userID int, currHp int32) error {
-	db := database.GetDB()
-	if db == nil {
-		return ErrDatabaseNotInitialized
+	d, err := db()
+	if err != nil {
+		return err
 	}
-
-	return db.Model(&model.User{}).
+	return d.Model(&model.User{}).
 		Where("id = ?", userID).
 		Update("curr_hp", currHp).
 		Error
 }
 
-// UpdateHeroAvatar persists the selected hero_avatar for the given user id.
 func UpdateHeroAvatar(userID int, heroAvatar string) error {
-	db := database.GetDB()
-	if db == nil {
-		return ErrDatabaseNotInitialized
+	d, err := db()
+	if err != nil {
+		return err
 	}
-
-	return db.Model(&model.User{}).
+	return d.Model(&model.User{}).
 		Where("id = ?", userID).
 		Update("hero_avatar", heroAvatar).
 		Error

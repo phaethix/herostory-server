@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
-// DecodeMessage decode byte array by message code
+// DecodeMessage unmarshals the protobuf body identified by code.
 func DecodeMessage(data []byte, code int16) (*dynamicpb.Message, error) {
 	desc, err := getMsgDescByMsgCode(code)
 	if err != nil {
@@ -20,33 +20,31 @@ func DecodeMessage(data []byte, code int16) (*dynamicpb.Message, error) {
 	if err := proto.Unmarshal(data, msg); err != nil {
 		return nil, err
 	}
-
 	return msg, nil
 }
 
-// EncodeMessage encode message objects to byte array
+// EncodeMessage writes the wire frame: 2-byte length (always 0), 2-byte code, body.
 func EncodeMessage(obj protoreflect.ProtoMessage) ([]byte, error) {
 	if obj == nil {
 		return nil, ErrEmptyData
 	}
 
-	// encode the length of the message
-	msgSizeByteArray := make([]byte, 2)
-	binary.BigEndian.PutUint16(msgSizeByteArray, 0)
-
-	// encode the code of the message
 	code, err := getMsgCodeByMsgName(string(obj.ProtoReflect().Descriptor().Name()))
 	if err != nil {
 		return nil, err
 	}
-	msgCodeByteArray := make([]byte, 2)
-	binary.BigEndian.PutUint16(msgCodeByteArray, uint16(code))
 
-	// encode the body of the message
-	msgBodyByteArray, err := proto.Marshal(obj)
+	body, err := proto.Marshal(obj)
 	if err != nil {
 		return nil, err
 	}
 
-	return slices.Concat(msgSizeByteArray, msgCodeByteArray, msgBodyByteArray), nil
+	// First two bytes are a leftover length prefix from the original
+	// TCP framing. WebSocket already frames the payload, so they stay 0
+	// to remain wire-compatible with the demo client.
+	return slices.Concat(
+		binary.BigEndian.AppendUint16(nil, 0),
+		binary.BigEndian.AppendUint16(nil, uint16(code)),
+		body,
+	), nil
 }

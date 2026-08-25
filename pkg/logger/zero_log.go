@@ -13,17 +13,23 @@ import (
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-var formatTime = func(i interface{}) string {
+var formatTime = func(i any) string {
 	return fmt.Sprintf("%+v", i)
 }
 
-var formatCaller = func(i interface{}) string {
-	if caller, ok := i.(string); ok {
-		return caller[strings.LastIndex(caller, "/")+1:] + ":"
+var formatCaller = func(i any) string {
+	caller, ok := i.(string)
+	if !ok {
+		return ""
 	}
-	return ""
+	_, file, found := strings.CutLast(caller, "/")
+	if found {
+		return file + ":"
+	}
+	return caller + ":"
 }
 
+// InitZeroLogger writes to stdout and path/filename.log.
 func InitZeroLogger(path, filename string) {
 	zerolog.TimeFieldFormat = "2006/01/02 15:04:05.000000"
 	zerolog.FormattedLevels = map[zerolog.Level]string{

@@ -2,6 +2,8 @@ package websocket
 
 import (
 	"encoding/binary"
+	"time"
+
 	"herostory-server/internal/codec"
 	"herostory-server/internal/game"
 	"herostory-server/internal/handler"
@@ -9,7 +11,6 @@ import (
 	"herostory-server/internal/pb"
 	"herostory-server/internal/userpersist"
 	"herostory-server/pkg/main_thread"
-	"time"
 
 	"github.com/gorilla/websocket"
 	"github.com/rs/zerolog/log"
@@ -20,6 +21,7 @@ const (
 	MsgQueueSize          = 1024
 	OneSecond             = 1000
 	ReadMsgCountPerSecond = 8
+	minFrameLen           = 4
 )
 
 type CmdContext struct {
@@ -30,92 +32,65 @@ type CmdContext struct {
 	msgQ      chan protoreflect.ProtoMessage
 }
 
+// NewCmdContext creates the send queue immediately so Broadcast can
+// WriteMsg during handshake, before LoopSendMessage has started.
 func NewCmdContext(conn *websocket.Conn, sessionID int32) *CmdContext {
-	return &CmdContext{
+	ctx := &CmdContext{
 		conn:      conn,
 		SessionID: sessionID,
 		msgQ:      make(chan protoreflect.ProtoMessage, MsgQueueSize),
 	}
+	if conn != nil {
+		ctx.addr = conn.RemoteAddr().String()
+	}
+	return ctx
 }
 
-func (w *CmdContext) BindUserId(userId int64) {
-	w.userId = userId
-}
-
-func (w *CmdContext) GetUserId() int64 {
-	return w.userId
-}
-
-func (w *CmdContext) GetClientAddr() string {
-	return w.addr
-}
+func (w *CmdContext) BindUserId(userId int64) { w.userId = userId }
+func (w *CmdContext) GetUserId() int64        { return w.userId }
 
 func (w *CmdContext) WriteMsg(msg protoreflect.ProtoMessage) {
 	if msg == nil || w.msgQ == nil {
 		return
 	}
-
 	w.msgQ <- msg
 }
 
-func (w *CmdContext) SendErrorMsg(code int, msg string) {
-	// Implementation for sending error message
-}
-
-func (w *CmdContext) Disconnect() {
-	if w.conn != nil {
-		_ = w.conn.Close()
-	}
-}
-
+// LoopSendMessage starts the goroutine that writes queued protobufs to the socket.
 func (w *CmdContext) LoopSendMessage() {
-	if w.msgQ == nil {
-		w.msgQ = make(chan protoreflect.ProtoMessage, MsgQueueSize)
-	}
-
 	go func() {
 		for msg := range w.msgQ {
 			if msg == nil {
 				continue
 			}
-
 			data, err := codec.EncodeMessage(msg)
 			if err != nil {
-				log.Error().
-					Err(err).
-					Str("client", w.conn.RemoteAddr().String()).
-					Msg("encode message failed")
+				log.Error().Err(err).Str("client", w.addr).Msg("encode message failed")
 				continue
 			}
-
-			err = w.conn.WriteMessage(websocket.BinaryMessage, data)
-			if err != nil {
-				log.Error().
-					Err(err).
-					Str("client", w.conn.RemoteAddr().String()).
-					Msg("write message failed")
+			if err := w.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+				log.Error().Err(err).Str("client", w.addr).Msg("write message failed")
 			}
 		}
 	}()
 }
 
+// LoopReceiveMessage reads frames until the connection dies, then cleans up the session.
 func (w *CmdContext) LoopReceiveMessage() {
 	if w.conn == nil {
 		return
 	}
-
 	defer w.cleanupOnDisconnect()
 
 	w.conn.SetReadLimit(64 * 1024)
 
 	t0, n := int64(0), 0
-
 	for {
 		_, data, err := w.conn.ReadMessage()
 		if err != nil {
-			log.Error().
-				Err(err).
-				Msg("read message failed")
+			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+				log.Error().Err(err).Str("client", w.addr).Msg("read message failed")
+			}
 			break
 		}
 
@@ -123,23 +98,24 @@ func (w *CmdContext) LoopReceiveMessage() {
 		if t1-t0 > OneSecond {
 			t0, n = t1, 0
 		}
-
 		if n > ReadMsgCountPerSecond {
 			log.Warn().
-				Str("client", w.conn.RemoteAddr().String()).
+				Str("client", w.addr).
 				Int("message_count", n).
 				Msg("client is sending messages too fast")
 			continue
 		}
 		n++
 
+		if len(data) < minFrameLen {
+			log.Warn().Str("client", w.addr).Int("len", len(data)).Msg("short websocket frame")
+			continue
+		}
+
 		code := binary.BigEndian.Uint16(data[2:4])
 		msg, err := codec.DecodeMessage(data[4:], int16(code))
 		if err != nil {
-			log.Error().
-				Uint16("code", code).
-				Err(err).
-				Msg("decode client message failed")
+			log.Error().Uint16("code", code).Err(err).Msg("decode client message failed")
 			continue
 		}
 
@@ -150,43 +126,26 @@ func (w *CmdContext) LoopReceiveMessage() {
 
 		h := handler.CreateCmdHandler(code)
 		if h == nil {
-			log.Warn().
-				Uint16("code", code).
-				Msg("no handler found for client message")
+			log.Warn().Uint16("code", code).Msg("no handler found for client message")
 			continue
 		}
-
 		main_thread.Process(func() { h(w, msg) })
 	}
 }
 
-// cleanupOnDisconnect removes the user from the online list, force-flushes
-// any pending mutable state (e.g. HP) to the DB, and broadcasts
-// UserQuitResult to notify other players.
-//
-// This method is invoked from the connection's reader goroutine. All
-// mutations to game-wide state are routed through main_thread.Process so
-// they execute on the same goroutine as command handlers, preserving the
-// "single-threaded game loop" invariant.
 func (w *CmdContext) cleanupOnDisconnect() {
 	uid := w.userId
 	if uid <= 0 {
 		return
 	}
 
+	// Reader goroutine: hop onto the main thread so we don't race
+	// command handlers on onlineUsers / broadcaster.
 	main_thread.Process(func() {
 		if u := game.GetOnlineUser(int(uid)); u != nil {
-			// Persist the latest HP before forgetting the user. Using
-			// PersistNow bypasses the lazy-save quiet period so a quick
-			// log-in/log-out followed by a process restart does not
-			// rewind the user's HP.
 			userpersist.PersistNow(u)
 		}
-
 		game.RemoveOnlineUser(int(uid))
-
-		broadcaster.Broadcast(&pb.UserQuitResult{
-			QuitUserId: uint32(uid),
-		})
+		broadcaster.Broadcast(&pb.UserQuitResult{QuitUserId: uint32(uid)})
 	})
 }

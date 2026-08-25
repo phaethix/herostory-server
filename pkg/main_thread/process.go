@@ -11,18 +11,17 @@ var (
 	once  sync.Once
 )
 
+// Process enqueues task for serial execution on the main goroutine.
 func Process(task func()) {
 	if task == nil {
 		return
 	}
-
 	once.Do(func() { go execute() })
-
 	queue <- task
 }
 
-// ProcessWait runs task on the main thread and blocks until it finishes.
-// Must not be called from the main thread itself or it will deadlock.
+// ProcessWait runs task on the main goroutine and blocks until it finishes.
+// It deadlocks if called from the main goroutine itself.
 func ProcessWait(task func()) {
 	if task == nil {
 		return

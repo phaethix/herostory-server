@@ -7,10 +7,9 @@ import (
 	"herostory-server/internal/pb"
 )
 
-// MoveSpeed is pixels per second, matching the demo client's walk speed.
+// MoveSpeed matches the demo client's walk speed, in pixels per second.
 const MoveSpeed float32 = 300
 
-// MoveState holds the movement state of a user.
 type MoveState struct {
 	FromPosX  float32
 	FromPosY  float32
@@ -19,7 +18,8 @@ type MoveState struct {
 	StartTime uint64
 }
 
-// NewMoveState creates a MoveState from the given positions, stamped with the current time.
+// NewMoveState stamps StartTime with the server clock so every observer
+// interpolates from the same origin.
 func NewMoveState(fromX, fromY, toX, toY float32) *MoveState {
 	return &MoveState{
 		FromPosX:  fromX,
@@ -30,8 +30,9 @@ func NewMoveState(fromX, fromY, toX, toY float32) *MoveState {
 	}
 }
 
-// CurrentPos returns the interpolated position at now, based on MoveSpeed.
-// A nil receiver or a completed (or zero-length) travel yields the destination.
+// CurrentPos is where the avatar is now. A nil state means the player
+// never moved (origin). Finished or zero-length travel snaps to dest
+// so Stop does not overshoot.
 func (ms *MoveState) CurrentPos() (x, y float32) {
 	if ms == nil {
 		return 0, 0
@@ -57,7 +58,6 @@ func (ms *MoveState) CurrentPos() (x, y float32) {
 	return ms.FromPosX + float32(dx*p), ms.FromPosY + float32(dy*p)
 }
 
-// ToPB converts MoveState to its protobuf representation.
 func (ms *MoveState) ToPB() *pb.WhoElseIsHereResult_UserInfo_MoveState {
 	return &pb.WhoElseIsHereResult_UserInfo_MoveState{
 		FromPosX:  ms.FromPosX,

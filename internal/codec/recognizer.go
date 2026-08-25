@@ -1,8 +1,9 @@
 package codec
 
 import (
-	"herostory-server/internal/pb"
 	"strings"
+
+	"herostory-server/internal/pb"
 
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
@@ -12,41 +13,45 @@ var (
 	msgNameAndMsgCodeMap = make(map[string]int16)
 )
 
+// canonicalMsgName maps both enum names (USER_LOGIN_CMD) and message
+// names (UserLoginCmd) onto one lookup key.
+func canonicalMsgName(name string) string {
+	return strings.ToLower(strings.ReplaceAll(name, "_", ""))
+}
+
 func getMsgDescByMsgCode(code int16) (protoreflect.MessageDescriptor, error) {
 	if code < 0 {
 		return nil, ErrInvalidMsgCode
 	}
-
-	return msgCodeAndMsgDescMap[code], nil
+	desc, ok := msgCodeAndMsgDescMap[code]
+	if !ok {
+		return nil, ErrUnknownMessage
+	}
+	return desc, nil
 }
 
 func getMsgCodeByMsgName(name string) (int16, error) {
 	if name == "" {
 		return -1, ErrEmptyMsgName
 	}
-
-	name = strings.ToLower(
-		strings.ReplaceAll(name, "_", ""),
-	)
-
-	return msgNameAndMsgCodeMap[name], nil
+	code, ok := msgNameAndMsgCodeMap[canonicalMsgName(name)]
+	if !ok {
+		return -1, ErrUnknownMessage
+	}
+	return code, nil
 }
 
-// InitMaps initializes message code and descriptor mappings.
+// InitMaps builds the code↔descriptor tables. Call once at process start.
 func InitMaps() {
 	for k, v := range pb.MsgCode_value {
-		msgName := strings.ToLower(
-			strings.ReplaceAll(k, "_", ""),
-		)
-		msgNameAndMsgCodeMap[msgName] = int16(v)
+		msgNameAndMsgCodeMap[canonicalMsgName(k)] = int16(v)
 	}
 
 	msgDescLst := pb.File_api_proto_game_msg_proto.Messages()
-	for i := 0; i < msgDescLst.Len(); i++ {
+	for i := range msgDescLst.Len() {
 		msgDesc := msgDescLst.Get(i)
-		msgName := strings.ToLower(
-			strings.ReplaceAll(string(msgDesc.Name()), "_", ""),
-		)
-		msgCodeAndMsgDescMap[msgNameAndMsgCodeMap[msgName]] = msgDesc
+		if code, ok := msgNameAndMsgCodeMap[canonicalMsgName(string(msgDesc.Name()))]; ok {
+			msgCodeAndMsgDescMap[code] = msgDesc
+		}
 	}
 }

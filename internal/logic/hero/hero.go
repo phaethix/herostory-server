@@ -1,8 +1,6 @@
-// Package hero contains the select-hero game logic.
-//
-// Callers pass a command and receive a SelectHeroResult to write back to
-// the requesting client. An empty HeroAvatar on the result means failure
-// (see the proto comment on SelectHeroResult).
+// Package hero owns select-hero. An empty HeroAvatar on the result is
+// a client-visible failure (see SelectHeroResult in the proto); nil
+// means the command was dropped.
 package hero
 
 import (
@@ -14,11 +12,6 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-// Apply assigns heroAvatar to the online user and returns the result to
-// send back to that client. It returns nil when the command must be
-// ignored (offline user or nil cmd). An empty avatar is a client-visible
-// failure: the result is non-nil with HeroAvatar="" and in-memory state
-// is left unchanged.
 func Apply(userID int, cmd *pb.SelectHeroCmd) *pb.SelectHeroResult {
 	if cmd == nil || userID <= 0 {
 		return nil
@@ -26,9 +19,7 @@ func Apply(userID int, cmd *pb.SelectHeroCmd) *pb.SelectHeroResult {
 
 	user := game.GetOnlineUser(userID)
 	if user == nil {
-		log.Warn().
-			Int("userId", userID).
-			Msg("select hero ignored: not online")
+		log.Warn().Int("userId", userID).Msg("select hero ignored: not online")
 		return nil
 	}
 
@@ -39,7 +30,6 @@ func Apply(userID int, cmd *pb.SelectHeroCmd) *pb.SelectHeroResult {
 
 	user.HeroAvatar = avatar
 	persistAvatar(userID, avatar)
-
 	return &pb.SelectHeroResult{HeroAvatar: avatar}
 }
 

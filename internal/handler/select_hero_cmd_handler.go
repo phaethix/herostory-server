@@ -4,7 +4,6 @@ import (
 	"herostory-server/internal/logic/hero"
 	"herostory-server/internal/pb"
 
-	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/dynamicpb"
 )
 
@@ -17,18 +16,13 @@ func selectHeroCmdHandler(ctx CmdContext, msg *dynamicpb.Message) {
 		return
 	}
 
-	cmd := &pb.SelectHeroCmd{}
-	msg.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
-		cmd.ProtoReflect().Set(fd, v)
-		return true
-	})
+	cmd := unmarshalCmd[pb.SelectHeroCmd](msg)
 
 	result := hero.Apply(int(ctx.GetUserId()), cmd)
 	if result == nil {
 		return
 	}
 
-	// SelectHeroResult is a reply to the requesting client, not a broadcast.
-	// Other players pick up the new avatar via UserEntry / WhoElseIsHere.
+	// Reply to the requester only. Others see the new avatar on Entry / WhoElseIsHere.
 	ctx.WriteMsg(result)
 }

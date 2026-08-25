@@ -1,6 +1,6 @@
 # HeroStory Game Server
 
-![Go](https://img.shields.io/badge/Go-1.25-blue?logo=go)
+![Go](https://img.shields.io/badge/Go-1.27-blue?logo=go)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![WebSocket](https://img.shields.io/badge/Protocol-WebSocket-purple)
 

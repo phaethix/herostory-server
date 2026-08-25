@@ -1,37 +1,64 @@
 package server
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
-	"herostory-server/internal/codec"
-	"herostory-server/internal/pb"
 	"net/http"
+	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
 	"time"
+
+	"herostory-server/internal/codec"
+	"herostory-server/internal/database"
+	"herostory-server/internal/model"
+	"herostory-server/internal/pb"
 
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
+	"gorm.io/gorm"
 )
-
-const wsAddr = "ws://localhost:12345/websocket"
 
 func TestMain(m *testing.M) {
 	codec.InitMaps()
 	os.Exit(m.Run())
 }
 
+func startWS(t *testing.T) string {
+	t.Helper()
+	srv := httptest.NewTestServer(t, http.HandlerFunc(WebSocketHandshake))
+	srv.Start()
+	return "ws" + strings.TrimPrefix(srv.URL, "http")
+}
+
 func dial(t *testing.T) *websocket.Conn {
 	t.Helper()
 	ctx, cancel := context.WithTimeout(t.Context(), 3*time.Second)
 	defer cancel()
-	conn, resp, err := (&websocket.Dialer{}).DialContext(ctx, wsAddr, nil)
+	conn, resp, err := (&websocket.Dialer{}).DialContext(ctx, startWS(t), nil)
 	require.NoError(t, err)
 	assert.Equal(t, http.StatusSwitchingProtocols, resp.StatusCode)
-	t.Cleanup(func() { conn.Close() })
+	t.Cleanup(func() { _ = conn.Close() })
 	return conn
+}
+
+func requireDB(t *testing.T) {
+	t.Helper()
+	if database.GetDB() != nil {
+		return
+	}
+	dsn := cmp.Or(os.Getenv("MYSQL_DSN"),
+		"root:happycoding@tcp(127.0.0.1:3306)/hero_story?charset=utf8mb4&parseTime=True&loc=Local")
+	if err := database.Open(dsn, &gorm.Config{}); err != nil {
+		t.Skipf("mysql not available: %v", err)
+	}
+	if err := database.GetDB().AutoMigrate(&model.User{}); err != nil {
+		t.Skipf("auto migrate failed: %v", err)
+	}
 }
 
 func send(t *testing.T, conn *websocket.Conn, msg proto.Message) {
@@ -82,6 +109,8 @@ func TestParseUserLoginCmd(t *testing.T) {
 }
 
 func TestUserLogin(t *testing.T) {
+	requireDB(t)
+
 	for _, tt := range []struct {
 		name, user, pass string
 	}{

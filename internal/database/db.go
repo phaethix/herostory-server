@@ -8,56 +8,44 @@ import (
 	"gorm.io/gorm"
 )
 
-var (
-	// mu protects access to the global DB variable.
-	mu sync.RWMutex
+const (
+	maxOpenConns    = 128
+	maxIdleConns    = 16
+	connMaxLifetime = 2 * time.Minute
+)
 
-	// DB is the shared *gorm.DB instance used by repository packages. It must
-	// be initialized during application startup (typically in bootstrap.InitApp)
-	// before any repository call.
+var (
+	mu sync.RWMutex
 	DB *gorm.DB
 )
 
-// SetDB stores the provided *gorm.DB in a threadsafe manner. It is usually
-// called once during start-up and never changed after that.
 func SetDB(db *gorm.DB) {
 	mu.Lock()
 	defer mu.Unlock()
 	DB = db
 }
 
-// GetDB returns the database connection previously set via SetDB, or nil if
-// the connection has not been initialized yet.
+// GetDB returns the connection set by Open, or nil if Open has not succeeded.
 func GetDB() *gorm.DB {
 	mu.RLock()
 	defer mu.RUnlock()
 	return DB
 }
 
-// Open establishes a connection to a MySQL database using the given DSN and
-// optional GORM configuration. On success it stores the resulting *gorm.DB in
-// the global variable so that callers may subsequently call GetDB().
-// It also configures connection pool settings and tests the connection.
+// Open connects to MySQL, pings it, and stores the handle for GetDB.
 func Open(dsn string, config *gorm.Config) error {
 	db, err := gorm.Open(mysql.Open(dsn), config)
 	if err != nil {
 		return err
 	}
 
-	// configure connection pool settings
 	sqlDB, err := db.DB()
 	if err != nil {
 		return err
 	}
-
-	// maximum number of open connections
-	sqlDB.SetMaxOpenConns(128)
-	// maximum number of idle connections
-	sqlDB.SetMaxIdleConns(16)
-	// maximum connection lifetime
-	sqlDB.SetConnMaxLifetime(2 * time.Minute)
-
-	// test the connection
+	sqlDB.SetMaxOpenConns(maxOpenConns)
+	sqlDB.SetMaxIdleConns(maxIdleConns)
+	sqlDB.SetConnMaxLifetime(connMaxLifetime)
 	if err := sqlDB.Ping(); err != nil {
 		return err
 	}
