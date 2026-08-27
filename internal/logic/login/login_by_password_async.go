@@ -54,8 +54,23 @@ func doLogin(username, password string) *model.User {
 		Str("username", username).
 		Int("userId", user.ID).
 		Msg("user logged in")
+	repairSessionHP(user)
 	writeRankProfile(user)
 	return user
+}
+
+func repairSessionHP(u *model.User) {
+	if u == nil || u.CurrHp == model.DefaultMaxHp {
+		return
+	}
+	u.CurrHp = model.DefaultMaxHp
+	if err := repository.UpdateCurrHp(u.ID, u.CurrHp); err != nil {
+		log.Error().
+			Err(err).
+			Int("userId", u.ID).
+			Int32("currHp", u.CurrHp).
+			Msg("login: respawn HP repair failed")
+	}
 }
 
 func writeRankProfile(u *model.User) {
@@ -124,17 +139,7 @@ func updateLastLogin(user *model.User) {
 // SessionHP is always full HP. The login/entry/who-else protos carry no
 // HP field, so the client always draws a full bar; keeping a wounded
 // DB value would look healthy on screen and then die in one hit.
-func SessionHP(user *model.User) int32 {
-	hp := model.DefaultMaxHp
-	if user == nil || user.CurrHp == hp {
-		return hp
-	}
-	if err := repository.UpdateCurrHp(user.ID, hp); err != nil {
-		log.Error().
-			Err(err).
-			Int("userId", user.ID).
-			Int32("currHp", hp).
-			Msg("login: respawn HP repair failed")
-	}
-	return hp
+// DB repair runs in doLogin on the async worker, not here.
+func SessionHP(*model.User) int32 {
+	return model.DefaultMaxHp
 }
