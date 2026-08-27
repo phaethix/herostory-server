@@ -16,8 +16,11 @@ const subtractHp int32 = 10
 
 // Result.Broadcasts is pre-ordered: Attk, SubtractHp, then optional Die.
 // Iterate the slice; do not reconstruct the sequence at the call site.
+// LoserID is non-zero when this hit killed the target.
 type Result struct {
 	Broadcasts []protoreflect.ProtoMessage
+	WinnerID   int
+	LoserID    int
 }
 
 // Apply returns nil when the attack is invalid; nothing is mutated in that case.
@@ -47,6 +50,8 @@ func Apply(attackerID int, cmd *pb.UserAttkCmd) *Result {
 		r.Broadcasts = append(r.Broadcasts, &pb.UserDieResult{
 			TargetUserId: uint32(targetID),
 		})
+		r.WinnerID = attackerID
+		r.LoserID = targetID
 	}
 	return r
 }
@@ -56,7 +61,7 @@ func validate(attackerID int, cmd *pb.UserAttkCmd) *game.OnlineUser {
 		return nil
 	}
 
-	targetID := int(cmd.GetTargetUserId())
+	targetID := int(cmd.TargetUserId)
 	if targetID <= 0 {
 		return nil
 	}

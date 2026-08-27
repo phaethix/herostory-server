@@ -4,8 +4,11 @@
 package hero
 
 import (
+	"context"
+
 	"herostory-server/internal/game"
 	"herostory-server/internal/pb"
+	"herostory-server/internal/rank"
 	"herostory-server/internal/repository"
 	asyncop "herostory-server/pkg/async_op"
 
@@ -23,17 +26,17 @@ func Apply(userID int, cmd *pb.SelectHeroCmd) *pb.SelectHeroResult {
 		return nil
 	}
 
-	avatar := cmd.GetHeroAvatar()
+	avatar := cmd.HeroAvatar
 	if avatar == "" {
 		return &pb.SelectHeroResult{}
 	}
 
 	user.HeroAvatar = avatar
-	persistAvatar(userID, avatar)
+	persistAvatar(user.UserID, user.UserName, avatar)
 	return &pb.SelectHeroResult{HeroAvatar: avatar}
 }
 
-func persistAvatar(userID int, avatar string) {
+func persistAvatar(userID int, userName, avatar string) {
 	asyncop.Process(userID, func() {
 		if err := repository.UpdateHeroAvatar(userID, avatar); err != nil {
 			log.Error().
@@ -41,6 +44,12 @@ func persistAvatar(userID int, avatar string) {
 				Int("userId", userID).
 				Str("heroAvatar", avatar).
 				Msg("persist hero_avatar failed")
+		}
+		if err := rank.PutBasicInfo(context.Background(), userID, userName, avatar); err != nil {
+			log.Error().
+				Err(err).
+				Int("userId", userID).
+				Msg("rank: put BasicInfo failed")
 		}
 	}, nil)
 }

@@ -1,10 +1,12 @@
 package login
 
 import (
+	"context"
 	"errors"
 	"time"
 
 	"herostory-server/internal/model"
+	"herostory-server/internal/rank"
 	"herostory-server/internal/repository"
 	asyncop "herostory-server/pkg/async_op"
 
@@ -32,7 +34,9 @@ func LoginByPasswordAsync(username, password string) *asyncop.AsyncBizResult[mod
 func doLogin(username, password string) *model.User {
 	user, err := repository.GetUserByName(username)
 	if errors.Is(err, repository.ErrNotFound) {
-		return registerNewUser(username, password)
+		u := registerNewUser(username, password)
+		writeRankProfile(u)
+		return u
 	}
 	if err != nil {
 		log.Error().
@@ -50,7 +54,20 @@ func doLogin(username, password string) *model.User {
 		Str("username", username).
 		Int("userId", user.ID).
 		Msg("user logged in")
+	writeRankProfile(user)
 	return user
+}
+
+func writeRankProfile(u *model.User) {
+	if u == nil {
+		return
+	}
+	if err := rank.PutBasicInfo(context.Background(), u.ID, u.UserName, u.HeroAvatar); err != nil {
+		log.Error().
+			Err(err).
+			Int("userId", u.ID).
+			Msg("rank: put BasicInfo failed")
+	}
 }
 
 func registerNewUser(username, password string) *model.User {
